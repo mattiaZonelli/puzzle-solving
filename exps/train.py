@@ -48,12 +48,17 @@ class Trainer:
         for n, data in enumerate(pbar, 1):
             self.optimizer.zero_grad()
 
-            anchor, positive, negative = self.forward(data)
+            anchor = self.forward(data["anchor"], data["position"])
+            positive = self.forward(data["positive"],
+                                    (data["position"] + 2) % 4)
+            negative = self.forward(data["negative"],
+                                    (data["position"] + 2) % 4)
 
             loss = self.criterion(anchor, positive, negative)
             loss.backward()
             self.optimizer.step()
             mloss += (loss.item() - mloss) / n
+
             if self.verbose:
                 pbar.set_description(f"TRAIN - LOSS: {mloss:.4f}")
         self.curr_epoch += 1
@@ -71,26 +76,21 @@ class Trainer:
         with torch.no_grad():
             for n, data in enumerate(pbar, 1):
                 anchor, positive, negative = self.forward(data)
+                anchor = self.forward(data["anchor"], data["position"])
+                positive = self.forward(data["positive"], data["position"] + 2))
                 loss = self.criterion(anchor, positive, negative)
                 mloss += (loss.item() - mloss) / n
+                similarity(positive)
 
                 if self.verbose:
                     pbar.set_description(f"VAL - LOSS: {mloss:.4f}, ")
 
-                if self.savefig:
-                    self.callback()
         self.accuracy.reset()
 
         return mloss
 
-    def callback(self, **kwargs):
-        pass
-
-    def forward(self, data):
-        anchor = data["anchor"].to(self.device)
-        positive = data["positive"].to(self.device)
-        negative = data["negative"].to(self.device)
-        return self.model(anchor, positive, negative, data["position"])
+    def forward(self, **data):
+        return self.model(data["input"].to(self.device), data["position"])
 
     def reset(self, config):
         self.setup = self.setup_class(config)
