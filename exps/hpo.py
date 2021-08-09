@@ -9,15 +9,15 @@ from ray import tune
 from ray.tune import Trainable, CLIReporter
 from ray.tune.trial import ExportFormat
 
-from exps.hetero.train import ReLabTrainer, DeepLabReLabTrainer
+from exps.train import Trainer
 from exps.utils import set_seed
 from exps.utils.parsers import train_abs_parser
 
 
-class ReLabTrainable(Trainable):
+class SiameseTrainable(Trainable):
     def setup(self, config):
-        self.trn = ReLabTrainer(config)
-        self.best_val_miou = 0.
+        self.trn = Trainer(config)
+        self.best_val_loss = 0.
 
     @property
     def model(self):
@@ -61,21 +61,14 @@ class ReLabTrainable(Trainable):
 
     def step(self):
         train_loss = self.trn.epoch()
-        val_loss, accuracy, val_miou = self.trn.evaluate()
-        result = {"train_loss": train_loss, "val_loss": val_loss,
-                  "accuracy": accuracy, "val_miou": val_miou}
+        val_loss = self.trn.evaluate()
+        result = {"train_loss": train_loss, "val_loss": val_loss}
 
-        if self.best_val_miou < val_miou:
-            self.best_val_miou = val_miou
+        if self.best_val_loss > val_loss:
+            self.best_val_loss = val_loss
             result.update(should_checkpoint=True)
 
         return result
-
-
-class DeepLabReLabTrainable(ReLabTrainable):
-    def setup(self, config):
-        self.trn = DeepLabReLabTrainer(config)
-        self.best_val_miou = 0.
 
 
 def hpo_parser():
@@ -125,11 +118,6 @@ if __name__ == "__main__":
     args = hpo_parser().parse_args()
     set_seed(args.seed)
 
-    exp_dir = osp.join("results", args.exp_dir)
-    base_fname = f"ks={args.kernel_size}_dil={args.dilation}"
-    pt_fname = base_fname + ".pt"
-    comps_dir = osp.join(exp_dir, "compatibilities")
-
     exp_name = args.exp_name
     local_dir = osp.abspath(args.hpo_dir)
     check_dir = osp.abspath(osp.join(".", "ray_checkpoints"))
@@ -137,15 +125,9 @@ if __name__ == "__main__":
     config = {"dataset": "pascalvoc",
               "data_dir": osp.abspath("./datasets"),
               "batch_size": args.batch_size,
-              # "pt_fname": osp.abspath(osp.join(comps_dir, pt_fname)),
-              "pt_fname": osp.abspath(exp_dir),  # for peleg
-              "rl_params": {"kernel_size": args.kernel_size,
-                            "dilation": args.dilation,
-                            "iterations": args.iterations},
-              "lr": args.lr or tune.loguniform(1e-6, 1e-2),
-              "weight_decay": args.weight_decay or \
-              tune.loguniform(1e-15, 1e-5),
-              "momentum": args.momentum or tune.choice([0.9, 0.95, 0.99]),
+              "lr": tune.loguniform(1e-6, 1e-2) if args.lr is None else args.lr,
+              "weight_decay": tune.loguniform(1e-15, 1e-5) if args.weight_decay is None else args.weight_decay,
+              "momentum": tune.choice([0.9, 0.95, 0.99]) if args.momentum is None else args.momentum,
               "verbose": args.verbose,
               "device": args.device,
               "device_ids": args.device_ids
@@ -164,14 +146,13 @@ if __name__ == "__main__":
         return f"{trial.trial_id}_" + dirname_id
 
     reporter = CLIReporter(
-        metric_columns=["train_loss", "val_loss", "val_miou",
-                        "training_iteration"])
+        metric_columns=["train_loss", "val_loss", "training_iteration"])
 
     analysis = tune.run(
-        DeepLabReLabTrainable,
+        SiameseTrainable,
         name=exp_name,
-        metric="val_miou",
-        mode="max",
+        metric="min-val_loss",
+        mode="min",
         stop={"training_iteration": args.epochs},
         reuse_actors=True,
         resources_per_trial={"cpu": args.cpus_per_trial,
@@ -185,6 +166,5 @@ if __name__ == "__main__":
         trial_name_creator=trial_name_id,
         trial_dirname_creator=trial_dirname_id,
         keep_checkpoints_num=1,
-        checkpoint_score_attr="val_miou",
+        checkpoint_score_attr="min-val_loss",
     )
-

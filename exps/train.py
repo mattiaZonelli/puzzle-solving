@@ -3,10 +3,11 @@ from argparse import ArgumentParser
 import os.path as osp
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torchmetrics import Accuracy
 
 from exps.setup import SiameseSetup
+from exps.utils import set_seed
+from exps.utils.parsers import train_abs_parser
 
 
 class Trainer:
@@ -19,11 +20,9 @@ class Trainer:
         self.model = self.setup.get_model()
         self.optimizer = self.setup.get_optimizer()
 
-        self.ignore_index = self.setup.ignore_index
         self.criterion = nn.TripletMarginLoss()
         self.device = config["device"]
         self.verbose = config.get("verbose", False)
-        self.savefig = config.get("savefig", False)
         self.accuracy = Accuracy(num_classes=self.setup.n_classes + 1,
                                  ignore_index=self.ignore_index,
                                  compute_on_step=False).to(self.device)
@@ -113,28 +112,17 @@ if __name__ == "__main__":
     args = train_parser().parse_args()
     set_seed(args.seed)
 
-    exp_dir = osp.join("results", args.exp_dir)
-    comps_dir = osp.join(exp_dir, "compatibilities")
-
-    base_fname = f"ks={args.kernel_size}_dil={args.dilation}"
-    pt_fname = base_fname + ".pt"
-
-    config = {"dataset": "pascalvoc",
+    config = {"dataset": args.dataset,
               "data_dir": osp.abspath("./datasets"),
               "batch_size": args.batch_size,
-              # "pt_fname": osp.abspath(osp.join(comps_dir, pt_fname)),
-              "pt_fname": osp.abspath(exp_dir),
-              "rl_params": {"kernel_size": args.kernel_size,
-                            "dilation": args.dilation,
-                            "iterations": args.iterations},
-              "lr": args.lr or 1e-3,
-              "weight_decay": args.weight_decay or 0.,
-              "momentum": args.momentum or 0.9,
+              "lr": 1e-3 if args.lr is None else args.lr,
+              "weight_decay": 0. if args.weight_decay is None else args.weight_decay,
+              "momentum": 0.9 if args.momentum is None else args.momentum,
               "device": "cuda",
               "device_ids": args.device_ids,
               "verbose": args.verbose,
               "savefig": args.savefig
               }
-    trainer = DeepLabReLabTrainer(config)
+    trainer = Trainer(config)
     trainer.train(args.epochs)
 

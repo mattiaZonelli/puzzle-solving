@@ -20,9 +20,11 @@ class SiameseSetup:
 
     def get_dsets(self):
         config = self.config
-        trset = factory(config["dataset"], config["data_dir"],
+        trset = factory(config["dataset"], puzzle=False,
+                        root=config["data_dir"],
                         download=config.get("download", False))
-        vlset = factory(config["dataset"], config["data_dir"],
+        vlset = factory(config["dataset"], puzzle=True,
+                        root=config["data_dir"],
                         download=config.get("download", False))
         return trset, vlset
 
