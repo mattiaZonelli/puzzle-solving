@@ -9,14 +9,9 @@ class SiameseNet(nn.Module):
         self.fcn = nn.Linear(self.net.fc.out_features + 1,
                              self.net.fc.out_features)
 
-    def forward(self, anchor, positive, negative, position):
-        anchor = self.net(anchor)
-        positive = self.net(positive)
-        negative = self.net(negative)
+    def forward(self, x, position):
+        x = self.net(x)
 
-        position = torch.full((len(anchor),), position, device=anchor.device)
-
-        anchor = self.fcn(torch.cat((anchor, position)))
-        positive = self.fcn(torch.cat((positive, position)))
-        negative = self.fcn(torch.cat((negative, position)))
-        return anchor, positive, negative
+        position = torch.full((len(x),), position, device=anchor.device)
+        x = self.fcn(torch.cat((x, position)))
+        return x
