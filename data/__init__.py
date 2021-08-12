@@ -20,5 +20,5 @@ def factory(name="mit", puzzle=False, root=None, download=False, shuffle=False,
         root = osp.join(".", "data", "datasets")
 
     if puzzle:
-        return PuzzleSet(name, root, size, shuffle, download=download))
+        return PuzzleSet(name, root, size, shuffle, download=download)
     return TileDataset(UnsupervisedImageFolder(name, root, download=download))
