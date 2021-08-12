@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 from torchmetrics import Accuracy
 
+from sps.similarity import sim
+from sps.psqp import psqp
 from exps.setup import SiameseSetup
 from exps.utils import set_seed
 from exps.utils.parsers import train_abs_parser
@@ -20,82 +22,84 @@ class Trainer:
         self.model = self.setup.get_model()
         self.optimizer = self.setup.get_optimizer()
 
-        self.criterion = nn.TripletMarginLoss()
+        self.criterion = nn.TripletMarginLoss(config.get(["margin"], 1.))
+        self.accuracy = Accuracy(num_classes=config["tile_size"])
         self.device = config["device"]
+        self.similarity = config["similarity"]
         self.verbose = config.get("verbose", False)
-        self.accuracy = Accuracy(num_classes=self.setup.n_classes + 1,
-                                 ignore_index=self.ignore_index,
-                                 compute_on_step=False).to(self.device)
-        self.curr_epoch = 0
 
-    def train(self, epochs):
+    def train(self, iterations, eval_step=1000):
         self.evaluate()
-        for epoch in range(epochs):
-            self.epoch()
-            self.evaluate()
+        trloss = 0.
+        pbar = self._get_pbar(self.trload, "TRAIN")
+        for iter_, data in enumerate(pbar, 1):
+            loss = self.iteration(data)
+            trloss += (loss.item() - trloss) / iter_
+
+            if self.verbose:
+                pbar.set_description(f"TRAIN - LOSS: {trloss:.4f}")
+
+            if iter_ % eval_step == 0:
+                self.evaluate()
+                trloss = 0.
+
+            if iter_ == iterations:
+                break
 
     def _get_pbar(self, loader, desc):
         if self.verbose:
-            return tqdm(loader, total=len(self.trload), desc=desc)
+            return tqdm(loader, desc=desc)
         return loader
 
-    def epoch(self):
-        mloss = 0.
+    def iteration(self, data):
+        self.optimizer.zero_grad()
 
-        pbar = self._get_pbar(self.trload, "TRAIN")
-        self.model.train()
-        for n, data in enumerate(pbar, 1):
-            self.optimizer.zero_grad()
+        position = data["position"]
+        anchor = self.forward(input=data["anchor"],position=position)
+        positive = self.forward(input=data["match"], position=-position)
+        negative = self.forward(input=data["match"], position=position)
 
-            anchor = self.forward(data["anchor"], data["position"])
-            positive = self.forward(data["positive"],
-                                    (data["position"] + 2) % 4)
-            negative = self.forward(data["negative"],
-                                    (data["position"] + 2) % 4)
+        loss = self.criterion(anchor, positive, negative)
+        loss.backward()
+        self.optimizer.step()
 
-            loss = self.criterion(anchor, positive, negative)
-            loss.backward()
-            self.optimizer.step()
-            mloss += (loss.item() - mloss) / n
-
-            if self.verbose:
-                pbar.set_description(f"TRAIN - LOSS: {mloss:.4f}")
-        self.curr_epoch += 1
-
-        return mloss
+        return loss
 
     def evaluate(self, vlload=None):
         if vlload is None:
             vlload = self.vlload
 
-        mloss = 0.
-
         pbar = self._get_pbar(vlload, "VAL")
         self.model.eval()
         with torch.no_grad():
-            for n, data in enumerate(pbar, 1):
-                anchor, positive, negative = self.forward(data)
-                anchor = self.forward(data["anchor"], data["position"])
-                positive = self.forward(data["positive"], data["position"] + 2))
-                loss = self.criterion(anchor, positive, negative)
-                mloss += (loss.item() - mloss) / n
-                similarity(positive)
+            for data in pbar:
+                puzzle = data["puzzle"]
+                emb_e = self.forward(input=puzzle, position=1)
+                emb_w = self.forward(input=puzzle, position=-1)
+                emb_s = self.forward(input=puzzle, position=2)
+                emb_n = self.forward(input=puzzle, position=-2)
 
+                Ch = sim(emb_e, emb_w, self.similarity)
+                Cv = sim(emb_s, emb_n, self.similarity)
+
+                p = psqp((Ch, Cv, data["puzzle_size"]), N=len(puzzle))
+                dacc = self.accuracy(p, data["order"]).item()
+                
                 if self.verbose:
-                    pbar.set_description(f"VAL - LOSS: {mloss:.4f}, ")
+                    pbar.set_description(f"VAL - DACC: {dacc:.4f}")
 
+        self.model.train()
         self.accuracy.reset()
 
-        return mloss
+        return dacc
 
     def forward(self, **data):
-        return self.model(data["input"].to(self.device), data["position"])
+        return self.model(**data)
 
     def reset(self, config):
         self.setup = self.setup_class(config)
         self.model = self.setup.get_model()
         self.optimizer = self.setup.get_optimizer()
-        self.curr_epoch = 0
 
 
 def train_parser():
@@ -113,16 +117,18 @@ if __name__ == "__main__":
     set_seed(args.seed)
 
     config = {"dataset": args.dataset,
-              "data_dir": osp.abspath("./datasets"),
+              "data_dir": osp.abspath("./data/datasets"),
               "batch_size": args.batch_size,
               "lr": 1e-3 if args.lr is None else args.lr,
               "weight_decay": 0. if args.weight_decay is None else args.weight_decay,
               "momentum": 0.9 if args.momentum is None else args.momentum,
-              "device": "cuda",
+              "tile_size": args.tile_size,
+              "device": args.device,
               "device_ids": args.device_ids,
               "verbose": args.verbose,
               "savefig": args.savefig
               }
+
     trainer = Trainer(config)
-    trainer.train(args.epochs)
+    trainer.train(args.iterations)
 
