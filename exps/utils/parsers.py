@@ -34,10 +34,10 @@ def input_parser():
 def train_abs_parser():
     parser = ArgumentParser(parents=[input_parser()], add_help=False)
     parser.add_argument(
-        "--epochs",
+        "--iterations",
         type=int,
-        default=1,
-        help="The number of training epochs."
+        default=10,
+        help="The number of training iterations."
     )
     parser.add_argument(
         "--lr",
@@ -61,12 +61,25 @@ def train_abs_parser():
         "--batch_size",
         type=int,
         default=2,
-        help="The batch size."
+        help="The batch size for the training set."
+    )
+    parser.add_argument(
+        "--tile_size",
+        type=int,
+        default=10,
+        required=True,
+        help="The size of a (square) puzzle tile."
     )
     parser.add_argument(
         "--verbose",
         action="store_true",
         help="Whether to print a progressbar for training or not."
+    )
+    parser.add_argument(
+        "--eval_step",
+        type=int,
+        default=10,
+        help="The number of iterations after which the evaluation is run."
     )
     parser.add_argument(
         "--device_ids",
