@@ -12,10 +12,9 @@ class SiameseSetup:
     def get_loaders(self):
         config = self.config
         trset, vlset = self.get_dsets()
-        # trset, vlset = Subset(trset, [0, 1, 2]), Subset(vlset, [0, 1, 2])
 
         self.trload = DataLoader(trset, config["batch_size"], num_workers=2)
-        self.vlload = DataLoader(vlset, config["batch_size"], num_workers=2)
+        self.vlload = DataLoader(vlset, 1, num_workers=2)
         return self.trload, self.vlload
 
     def get_dsets(self):
@@ -25,7 +24,8 @@ class SiameseSetup:
                         download=config.get("download", False))
         vlset = factory(config["dataset"], puzzle=True,
                         root=config["data_dir"],
-                        download=config.get("download", False))
+                        download=config.get("download", False),
+                        size=config["tile_size"], shuffle=True)
         return trset, vlset
 
     def get_model(self):
