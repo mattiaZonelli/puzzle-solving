@@ -22,7 +22,7 @@ def draw_puzzle(tiles, puzzle_size, separate=False):
     # nh, nw, ts, ts, c
     tiles = tiles.reshape(nh, nw, c, ts, ts).transpose(0, 1, 3, 4, 2)
     if separate:
-        fig, axes = plt.subplots(nh, nw)
+        _, axes = plt.subplots(nh, nw)
         for i in range(nh):
             for j in range(nw):
                 axes[i, j].imshow(tiles[i, j, :, :, :])
