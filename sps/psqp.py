@@ -46,7 +46,7 @@ def psqp(Ch, Cv, N, lr=1e-3):
 
     for Na in range(N):
         p[active] = 1. / (N - Na)
-        d = spmm(**A, p.flatten())
+        d = spmm(**A, matrix=p.flatten())
         p[active] += lr * d
         p.clamp_(0., 1.)
         active = (p != 0.) | (p != 1.)
