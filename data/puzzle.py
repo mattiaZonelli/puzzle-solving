@@ -6,11 +6,13 @@ from typing import Callable, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL.Image import Image
-from skimage.util import view_as_windows
+import torch
 from torchvision.datasets import ImageFolder
 from torchvision.datasets.folder import (default_loader,
                                          has_file_allowed_extension, cast)
 from torchvision.datasets.utils import download_and_extract_archive
+
+from exps.utils import view_as_windows
 
 
 def draw_puzzle(tiles, puzzle_size, separate=False):
@@ -107,7 +109,7 @@ class PuzzleSet(UnsupervisedImageFolder):
         size = self.tile_size
 
         if isinstance(img, Image):
-            img = np.asarray(img).transpose(2, 0, 1)
+            img = torch.from_numpy(np.asarray(img).transpose(2, 0, 1))
 
         c, h, w = img.shape
 
@@ -121,10 +123,10 @@ class PuzzleSet(UnsupervisedImageFolder):
         if self.shuffle:
             random.shuffle(order)
             tiles = tiles[order]
-        return tiles, order, (nh, nw)
+        return tiles, torch.tensor(order), torch.tensor([nh, nw])
 
     def __getitem__(self, idx):
         img = super(PuzzleSet, self).__getitem__(idx)
-        tiles, order, puzzle_size = self.make_puzzle(img)
+        tiles, order, puzzle_size = self.make_puzzle(img.squeeze(0))
         return {"puzzle": tiles, "order": order, "puzzle_size": puzzle_size,
                 "tile_size": self.tile_size}
