@@ -6,7 +6,7 @@ import torch.nn as nn
 from torchmetrics import Accuracy
 
 from sps.similarity import sim
-from sps.psqp import psqp
+from sps.psqp import compatibilities, psqp
 from exps.setup import SiameseSetup
 from exps.utils import set_seed
 from exps.utils.parsers import train_abs_parser
@@ -22,8 +22,9 @@ class Trainer:
         self.model = self.setup.get_model()
         self.optimizer = self.setup.get_optimizer()
 
-        self.criterion = nn.TripletMarginLoss(config.get(["margin"], 1.))
-        self.accuracy = Accuracy(num_classes=config["tile_size"])
+        self.criterion = nn.TripletMarginLoss(config.get("margin", 1.))
+        
+        self.accuracy = Accuracy(num_classes=self.setup.num_tiles)
         self.device = config["device"]
         self.similarity = config["similarity"]
         self.verbose = config.get("verbose", False)
@@ -55,9 +56,9 @@ class Trainer:
         self.optimizer.zero_grad()
 
         position = data["position"]
-        anchor = self.forward(input=data["anchor"],position=position)
-        positive = self.forward(input=data["match"], position=-position)
-        negative = self.forward(input=data["match"], position=position)
+        anchor = self.forward(x=data["anchor"],position=position)
+        positive = self.forward(x=data["match"], position=-position)
+        negative = self.forward(x=data["match"], position=position)
 
         loss = self.criterion(anchor, positive, negative)
         loss.backward()
@@ -73,17 +74,18 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             for data in pbar:
-                puzzle = data["puzzle"]
-                emb_e = self.forward(input=puzzle, position=1)
-                emb_w = self.forward(input=puzzle, position=-1)
-                emb_s = self.forward(input=puzzle, position=2)
-                emb_n = self.forward(input=puzzle, position=-2)
+                puzzle = data["puzzle"].squeeze(0)
+                emb_e = self.forward(x=puzzle, position=1)
+                emb_w = self.forward(x=puzzle, position=-1)
+                emb_s = self.forward(x=puzzle, position=2)
+                emb_n = self.forward(x=puzzle, position=-2)
 
                 Ch = sim(emb_e, emb_w, self.similarity)
                 Cv = sim(emb_s, emb_n, self.similarity)
 
-                p = psqp((Ch, Cv, data["puzzle_size"]), N=len(puzzle))
-                dacc = self.accuracy(p, data["order"]).item()
+                A = compatibilities(Ch, Cv, data["puzzle_size"].squeeze())
+                p = psqp(A, N=len(puzzle))
+                dacc = self.accuracy(p, data["order"].squeeze()).item()
                 
                 if self.verbose:
                     pbar.set_description(f"VAL - DACC: {dacc:.4f}")
@@ -117,12 +119,14 @@ if __name__ == "__main__":
     set_seed(args.seed)
 
     config = {"dataset": args.dataset,
+              "download": args.download,
               "data_dir": osp.abspath("./data/datasets"),
               "batch_size": args.batch_size,
               "lr": 1e-3 if args.lr is None else args.lr,
               "weight_decay": 0. if args.weight_decay is None else args.weight_decay,
               "momentum": 0.9 if args.momentum is None else args.momentum,
               "tile_size": args.tile_size,
+              "similarity": args.similarity,
               "device": args.device,
               "device_ids": args.device_ids,
               "verbose": args.verbose,
