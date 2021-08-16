@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 from torchvision.models import resnet50
 
 from data import factory
+from sps.siamese import SiameseNet
 
 
 class SiameseSetup:
@@ -19,17 +20,17 @@ class SiameseSetup:
 
     def get_dsets(self):
         config = self.config
-        trset = factory(config["dataset"], puzzle=False,
-                        root=config["data_dir"],
+        trset = factory(config["dataset"], size=config["tile_size"],
+                        puzzle=False, root=config["data_dir"],
                         download=config.get("download", False))
-        vlset = factory(config["dataset"], puzzle=True,
-                        root=config["data_dir"],
-                        download=config.get("download", False),
-                        size=config["tile_size"], shuffle=True)
+        vlset = factory(config["dataset"], size=config["tile_size"],
+                        puzzle=True, root=config["data_dir"],
+                        download=config.get("download", False), shuffle=True)
+        self.num_tiles = len(vlset[0]["puzzle"])
         return trset, vlset
 
     def get_model(self):
-        self.model = resnet50(pretrained=True)
+        self.model = SiameseNet(resnet50(pretrained=True))
         return self.model
 
     def get_optimizer(self):
