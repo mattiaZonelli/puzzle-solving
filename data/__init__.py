@@ -1,17 +1,20 @@
 import os.path as osp
+from torchvision.transforms import ToTensor
 
 from data.puzzle import UnsupervisedImageFolder, PuzzleSet
 from data.tiles import TileDataset
 
 
-def factory(name="mit", puzzle=False, root=None, download=False, shuffle=False,
-            size=None):
+def factory(name="mit", size=28, puzzle=False, root=None, download=False,
+            shuffle=False):
     """
 
     :param name: one of "mit", "mcgill", "bgu805", "bgu2360", "bgu3300"
     :param root: the root where the data is stored.
     :param download: whether or not to download the data.
-    :return: PuzzleSet: the puzzle set.
+    :param shuffle: whether to shuffle or not the puzzle.
+    :param size: the tile size.
+    :return: Union[PuzzleSet, TileDataset]: the puzzle set or the tile dataset.
     """
     if puzzle and size is None:
         raise ValueError("'size' must not be None when 'puzzle' is True.")
@@ -20,5 +23,7 @@ def factory(name="mit", puzzle=False, root=None, download=False, shuffle=False,
         root = osp.join(".", "data", "datasets")
 
     if puzzle:
-        return PuzzleSet(name, root, size, shuffle, download=download)
-    return TileDataset(UnsupervisedImageFolder(name, root, download=download))
+        return PuzzleSet(name, root, size, shuffle, transform=ToTensor(), download=download)
+    return TileDataset(UnsupervisedImageFolder(name, root,
+                                               transform=ToTensor(),
+                                               download=download), size=size)
