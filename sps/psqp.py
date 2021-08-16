@@ -1,54 +1,54 @@
+from tqdm import tqdm
 import torch
 from torch_sparse import coalesce, spmm
 
 
 def compatibilities(Ch, Cv, puzzle_size):
-    rows, cols = puzzle_size
-    nt = Ch.shape[0]
-
-    # TODO: replace torch.arange(nt) with these to improve sparseness of matrix
-    # Ch_inds, Cv_inds = Ch.nonzero(), Cv.nonzero()
-    # Ch_vals, Cv_vals = Ch[Ch > 0.], Cv[Cv > 0.]
+    rows, cols = puzzle_size[0].item(), puzzle_size[1].item()
+    nt = rows * cols
+    blk_comps = (Cv.t(), Ch.t(), Ch, Cv)
+    # neigh_inds = [C.nonzero() for C in blk_comps]
+    # neigh_vals = [C[C > 0.] for C in blk_comps]
+    neigh_vals = [C.flatten() for C in blk_comps]
 
     def block_range(bx, by):
         return torch.arange(nt) + (bx * cols + by) * nt
 
     def tiles2blk(t_coo, n_coo):
         blk1_rng, blk2_rng = block_range(*t_coo), block_range(*n_coo)
-        return torch.stack(
-            torch.meshgrid(blk1_rng, blk2_rng), dim=2).reshape(-1, 2).t()
+        return torch.stack(torch.meshgrid(blk1_rng, blk2_rng),
+                           dim=2).reshape(-1, 2).t()
 
     def sparse_coordinates(tx, ty):
         tile_inds, tile_vals = [], []
-        neigh_coos = (tx - 1, ty), (tx - 1, ty), (tx + 1, ty), (tx, ty + 1)
-        neigh_vals = (Cv.t(), Ch.t(), Ch, Cv.t())
+        neigh_coos = (tx - 1, ty), (tx, ty - 1), (tx, ty + 1), (tx + 1, ty)
 
-        for (nx, ny), neigh_vals in zip(neigh_coos, neigh_vals):
-            if 0 <= nx < rows and 0 <= nx < cols:
+        for (nx, ny), n_vals in zip(neigh_coos, neigh_vals):
+            if 0 <= nx < rows and 0 <= ny < cols:
                 tile_inds.append(tiles2blk((tx, ty), (nx, ny)))
-                tile_vals.append(neigh_vals) 
+                tile_vals.append(n_vals)
         return tile_inds, tile_vals
 
     inds, vals = [], []
     for tx in range(rows):
         for ty in range(cols):
             t_inds, t_vals = sparse_coordinates(tx, ty)
-            inds.append(t_inds); vals.append(t_vals)
-    inds, vals = coalesce(inds, vals, rows, cols)
-    
-    return {"index": inds, "value": vals, "m": rows, "n": cols}
+            inds += t_inds; vals += t_vals
+    inds, vals = torch.cat(inds, dim=1), torch.cat(vals)
+    inds, vals = coalesce(inds, vals, nt ** 2, nt ** 2)
+
+    return {"index": inds, "value": vals, "m": nt ** 2, "n": nt ** 2}
 
 
-def psqp(Ch, Cv, N, lr=1e-3):
-    A = compatibilities(Ch, Cv)
-    active = torch.full((N, N), fill_value=True, device=Ch.device)
-    p = torch.empty((N, N), device=Ch.device)
+def psqp(A, N, lr=1e-3):
+    active = torch.full((N ** 2, 1), fill_value=True, device=A["value"].device)
+    p = torch.empty((N ** 2, 1), device=A["value"].device)
 
-    for Na in range(N):
+    for Na in tqdm(range(1), total=N):
         p[active] = 1. / (N - Na)
-        d = spmm(**A, matrix=p.flatten())
-        p[active] += lr * d
+        d = spmm(**A, matrix=p)
+        p[active] += lr * d[active]
         p.clamp_(0., 1.)
         active = (p != 0.) | (p != 1.)
 
-    return p
+    return p.reshape(N, N)
