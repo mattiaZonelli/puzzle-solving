@@ -17,6 +17,17 @@ def input_parser():
         help="The dataset."
     )
     parser.add_argument(
+        "--similarity",
+        type=str,
+        default="gaussian",
+        help="The similarity function."
+    )
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Whether or not to download the dataset."
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="cpu",
