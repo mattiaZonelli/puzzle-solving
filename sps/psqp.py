@@ -1,6 +1,7 @@
 from tqdm import tqdm
 import torch
 from torch_sparse import coalesce, spmm
+from projection_matrix import projection_matrix
 
 
 def compatibilities(Ch, Cv, puzzle_size):
@@ -40,9 +41,11 @@ def compatibilities(Ch, Cv, puzzle_size):
     return {"index": inds, "value": vals, "m": nt ** 2, "n": nt ** 2}
 
 
+
 def psqp(A, N, lr=1e-3):
     active = torch.full((N ** 2, 1), fill_value=True, device=A["value"].device)
     p = torch.empty((N ** 2, 1), device=A["value"].device)
+    # K = projection_matrix(p)
 
     for Na in tqdm(range(1), total=N):
         p[active] = 1. / (N - Na)
