@@ -155,9 +155,12 @@ def view_as_windows(ten_in, window_shape, step=1):
 
     indexing_strides = ten_in[slices].stride()
 
-    win_indices_shape = (((torch.tensor(ten_in.shape) - 
+    '''win_indices_shape = (((torch.tensor(ten_in.shape) - 
                            window_shape.clone().detach())
-                          // torch.tensor(step)) + 1)
+                          // torch.tensor(step)) + 1)'''  # next line was like this
+
+    win_indices_shape = torch.div((torch.tensor(ten_in.shape) -
+                           window_shape.clone().detach()), torch.tensor(step), rounding_mode='trunc') + 1
 
     new_shape = tuple(list(win_indices_shape) + list(window_shape))
     stride = tuple(list(indexing_strides) + list(window_strides))

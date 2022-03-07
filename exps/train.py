@@ -11,6 +11,7 @@ from exps.setup import SiameseSetup
 from exps.utils import set_seed
 from exps.utils.parsers import train_abs_parser
 
+import time
 
 class Trainer:
     setup_class = SiameseSetup
@@ -23,7 +24,7 @@ class Trainer:
         self.optimizer = self.setup.get_optimizer()
 
         self.criterion = nn.TripletMarginLoss(config.get("margin", 1.))
-        
+
         self.accuracy = Accuracy(num_classes=self.setup.num_tiles)
         self.device = config["device"]
         self.similarity = config["similarity"]
@@ -45,7 +46,8 @@ class Trainer:
                 trloss = 0.
 
             if iter_ == iterations:
-                break
+                #break
+                return trloss
 
     def _get_pbar(self, loader, desc):
         if self.verbose:
@@ -55,8 +57,12 @@ class Trainer:
     def iteration(self, data):
         self.optimizer.zero_grad()
 
-        position = data["position"]
-        anchor = self.forward(x=data["anchor"],position=position)
+        if self.trload.batch_size == 1:
+            position = data["position"].item()
+        else:
+            position = data["position"][0].item()  # DA VERIFICARE CHE TUTTI GLI ELEMENTI SIANO UGUALI ALTRIMENTI NO SENSE
+
+        anchor = self.forward(x=data["anchor"], position=position)
         positive = self.forward(x=data["match"], position=-position)
         negative = self.forward(x=data["match"], position=position)
 
@@ -75,9 +81,13 @@ class Trainer:
         with torch.no_grad():
             for data in pbar:
                 puzzle = data["puzzle"].squeeze(0)
+
                 emb_e = self.forward(x=puzzle, position=1)
+
                 emb_w = self.forward(x=puzzle, position=-1)
+
                 emb_s = self.forward(x=puzzle, position=2)
+
                 emb_n = self.forward(x=puzzle, position=-2)
 
                 Ch = sim(emb_e, emb_w, self.similarity)
@@ -86,7 +96,7 @@ class Trainer:
                 A = compatibilities(Ch, Cv, data["puzzle_size"].squeeze())
                 p = psqp(A, N=len(puzzle))
                 dacc = self.accuracy(p, data["order"].squeeze()).item()
-                
+
                 if self.verbose:
                     pbar.set_description(f"VAL - DACC: {dacc:.4f}")
 
@@ -115,6 +125,7 @@ def train_parser():
 
 
 if __name__ == "__main__":
+
     args = train_parser().parse_args()
     set_seed(args.seed)
 
@@ -134,5 +145,29 @@ if __name__ == "__main__":
               }
 
     trainer = Trainer(config)
-    trainer.train(args.iterations)
 
+
+    #trainer.train(args.iterations)
+
+    #'''
+    start_time = time.time()
+    loss = 0.
+    for it in range(5):
+        loss += trainer.train(args.iterations)
+
+    print("AVG LOSS: ", loss/5)
+    print("--- %s seconds ---" % (time.time() - start_time))
+    #'''
+
+'''
+    NOTE:
+    - it always stops at 9 iterations, why?;
+    - what TRAIN - LOSS means? the lower the better or not?
+    - flag --savefig sembra non funzionare;
+    - how we can use function draw_puzzle in puzzle.py???
+
+    COSE DA FARE
+    - quando eseguirà correttemente, aggiungere psqp e projection matrix;
+    - sostituire coalesce di torch-sparse con qualcosa di interno a pytorch, usa link per aiuto https://pytorch.org/docs/stable/sparse.html
+
+'''
