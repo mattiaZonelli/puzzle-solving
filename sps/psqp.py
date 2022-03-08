@@ -20,7 +20,7 @@ def compatibilities(Ch, Cv, puzzle_size):
         return torch.stack(torch.meshgrid(blk1_rng, blk2_rng),
                            dim=2).reshape(-1, 2).t()
 
-    def sparse_coordinates(tx, ty):  # DA RISCRIVERE IN MODO DA NON USARE PIU' COALESCE
+    def sparse_coordinates(tx, ty):
         tile_inds, tile_vals = [], []
         neigh_coos = (tx - 1, ty), (tx, ty - 1), (tx, ty + 1), (tx + 1, ty)
 
@@ -42,31 +42,26 @@ def compatibilities(Ch, Cv, puzzle_size):
         And we get only 1 tensor with len 4896, that are the non-zero values but there are some zeroes.
     '''
     inds, vals = torch.cat(inds, dim=1), torch.cat(vals)
-    #inds, vals = coalesce(inds, vals, nt ** 2, nt ** 2)
-
-    ''' funziona tutto anche commentando la riga con coalesce, quindi a che serve?? '''
+    inds, vals = coalesce(inds, vals, nt ** 2, nt ** 2)
     '''
         to go from Ch e Cv to A = { inds, vals, ...} happens something i dont know...
     '''
 
-    return torch.sparse_coo_tensor(inds, vals, (nt**2, nt**2)).coalesce()
-    # return {"index": inds, "value": vals, "m": nt ** 2, "n": nt ** 2}
+    #return torch.sparse_coo_tensor(inds, vals, (nt**2, nt**2)).coalesce()
+    return {"index": inds, "value": vals, "m": nt ** 2, "n": nt ** 2}
 
 
-'''
- A or vals contains only some value, not all the 144x144 values of the real matrix.
-'''
 def psqp(A, N, lr=1e-3):
-    active = torch.full((N ** 2, 1), fill_value=True, device=A.device)
-    p = torch.empty((N ** 2, 1), device=A.device)
+    active = torch.full((N ** 2, 1), fill_value=True, device=A["value"].device)
+    p = torch.empty((N ** 2, 1), device=A["value"].device)
 
     for Na in tqdm(range(1), total=N):
         p[active] = 1. / (N - Na)
-        # d = spmm(**A, matrix=p)
-        d = torch.sparse.mm(A, p)
+        d = spmm(**A, matrix=p)
+        #d = torch.sparse.mm(A, p)
 
         K, Nk = projection_matrix(p, N)
-        lambdas_x = lambdas(p, Nk, N)
+        # lambdas_x = lambdas(p, Nk, N)
         s = torch.mm(K.t(), d)
 
         ''' # tau_m == step, sembra non venire calcolata esattamente bene

@@ -12,6 +12,8 @@ class SiameseNet(nn.Module):
     def forward(self, x, position):
         x = self.net(x)
 
-        position = torch.full((len(x), 1), position, device=x.device)
+        if isinstance(position, int):
+            position = torch.full((len(x), 1), position, device=x.device)
+
         x = self.fcn(torch.cat((x, position), dim=1))
         return x

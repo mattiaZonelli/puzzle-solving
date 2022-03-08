@@ -56,11 +56,13 @@ class Trainer:
 
     def iteration(self, data):
         self.optimizer.zero_grad()
-
-        if self.trload.batch_size == 1:
-            position = data["position"].item()
-        else:
-            position = data["position"][0].item()  # DA VERIFICARE CHE TUTTI GLI ELEMENTI SIANO UGUALI ALTRIMENTI NO SENSE
+        '''
+            se effettivamente le due dimensioni di data["anchor“] e data["match"] corrispondono, 
+            questo dovrebbe funzionare
+        '''
+        position = data["position"]
+        position = torch.ones(1, len(data["anchor"])) * position
+        position = position.t()
 
         anchor = self.forward(x=data["anchor"], position=position)
         positive = self.forward(x=data["match"], position=-position)
@@ -145,29 +147,23 @@ if __name__ == "__main__":
               }
 
     trainer = Trainer(config)
+    trainer.train(args.iterations)
 
-
-    #trainer.train(args.iterations)
-
-    #'''
+    '''
     start_time = time.time()
     loss = 0.
-    for it in range(5):
+    for it in range(2):
         loss += trainer.train(args.iterations)
 
-    print("AVG LOSS: ", loss/5)
+    print("AVG LOSS: ", loss/2)
     print("--- %s seconds ---" % (time.time() - start_time))
-    #'''
+    '''
 
 '''
     NOTE:
     - it always stops at 9 iterations, why?;
-    - what TRAIN - LOSS means? the lower the better or not?
     - flag --savefig sembra non funzionare;
     - how we can use function draw_puzzle in puzzle.py???
-
-    COSE DA FARE
-    - quando eseguirà correttemente, aggiungere psqp e projection matrix;
-    - sostituire coalesce di torch-sparse con qualcosa di interno a pytorch, usa link per aiuto https://pytorch.org/docs/stable/sparse.html
+    - non capito perche le immagini del mit con tile_size 168 diventano 4x3 e non 3x3
 
 '''
