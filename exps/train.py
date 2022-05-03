@@ -6,12 +6,17 @@ import torch.nn as nn
 from torchmetrics import Accuracy
 
 from sps.similarity import sim
-from sps.psqp import compatibilities, psqp
+from sps.psqp import compatibilities, psqp, psqp_ls
 from exps.setup import SiameseSetup
 from exps.utils import set_seed
 from exps.utils.parsers import train_abs_parser
+from data.puzzle import draw_puzzle
+from exps.oracle import *
 
-import time
+import random
+from sps.relab import solve_puzzle
+import matplotlib.pyplot as plt
+
 
 class Trainer:
     setup_class = SiameseSetup
@@ -46,8 +51,8 @@ class Trainer:
                 trloss = 0.
 
             if iter_ == iterations:
-                #break
-                return trloss
+                break
+                # return trloss
 
     def _get_pbar(self, loader, desc):
         if self.verbose:
@@ -84,6 +89,7 @@ class Trainer:
             for data in pbar:
                 puzzle = data["puzzle"].squeeze(0)
 
+                '''
                 emb_e = self.forward(x=puzzle, position=1)
 
                 emb_w = self.forward(x=puzzle, position=-1)
@@ -94,13 +100,70 @@ class Trainer:
 
                 Ch = sim(emb_e, emb_w, self.similarity)
                 Cv = sim(emb_s, emb_n, self.similarity)
+                '''
 
+                '''Ch, Cv = oracle_compatibilities_og(data)
                 A = compatibilities(Ch, Cv, data["puzzle_size"].squeeze())
-                p = psqp(A, N=len(puzzle))
-                dacc = self.accuracy(p, data["order"].squeeze()).item()
+                # A_dense = A.to_dense()
+                p = psqp_ls(A, N=len(puzzle))
+                dacc = self.accuracy(p.squeeze(), data["order"].squeeze()).item()'''
+                h = 2
+                r = 2
+                lim_h = 8
+                lim_r = 8
+                psqp_dacc = torch.zeros(lim_r - r + lim_h - h)
+                rl_dacc = torch.zeros(lim_r - r + lim_h - h)
+                n_tiles = torch.zeros(lim_r - r + lim_h - h)
+                i = 1
+                while h < lim_h and r < lim_r:
+                    order = list(range(h * r))
+                    random.shuffle(order)
+                    order = torch.tensor([order]).int()
+                    # relab = solve_puzzle((h, r), order).int()
+                    for k in range(20):
+                        relab = solve_puzzle((h, r), order).int()
+                        try:
+                            t_dacc = self.accuracy(relab.squeeze(), order.squeeze()).item()
+                        except:
+                            t_dacc = my_accuracy(relab.squeeze(), order.squeeze(), h * r)
+                        if t_dacc > rl_dacc[i]:
+                            rl_dacc[i] = t_dacc
+
+                    data['puzzle_size'] = torch.tensor([h, r]).unsqueeze(0)
+                    Ch, Cv = oracle_compatibilities(h, r, order)
+                    A = compatibilities(Ch, Cv, data["puzzle_size"].squeeze())
+                    p = psqp_ls(A, N=(h * r))
+                    try:
+                        psqp_dacc[i] = self.accuracy(p.squeeze(), order.squeeze()).item()
+                    except:
+                        psqp_dacc[i] = my_accuracy(p.squeeze(), order.squeeze(), h * r)
+                    if psqp_dacc[i] < 1e-3:
+                        for k in range(15):
+                            p = psqp_ls(A, N=(h * r))
+                            dacc = my_accuracy(p.squeeze(), order.squeeze(), h * r)
+                            if dacc > psqp_dacc[i]:
+                                psqp_dacc[i] = dacc
+
+                    n_tiles[i] = h * r
+                    if h == r:
+                        r += 1
+                    else:
+                        h += 1
+                    i += 1
+
+                fileName = r'n_tile vs accuracy.png'
+                fig, ax = plt.subplots(1)
+                plt.plot(n_tiles, rl_dacc, label='ReLab Accuracy')
+                plt.plot(n_tiles, psqp_dacc, label='PSQP Accuracy')
+                plt.legend()
+                plt.xlabel('# tiles')
+                plt.ylabel('Accuracy')
+                plt.show()
+                fig.savefig(fileName, format='png')
+                plt.close(fig)
 
                 if self.verbose:
-                    pbar.set_description(f"VAL - DACC: {dacc:.4f}")
+                    pbar.set_description(f"VAL - DACC: {psqp_dacc[i-1]:.4f}")
 
         self.model.train()
         self.accuracy.reset()
@@ -127,7 +190,6 @@ def train_parser():
 
 
 if __name__ == "__main__":
-
     args = train_parser().parse_args()
     set_seed(args.seed)
 
@@ -143,27 +205,27 @@ if __name__ == "__main__":
               "device": args.device,
               "device_ids": args.device_ids,
               "verbose": args.verbose,
-              "savefig": args.savefig
+              "savefig": args.savefig,
               }
 
     trainer = Trainer(config)
-    trainer.train(args.iterations)
+    trainer.train(args.iterations, args.eval_step)
 
     '''
     start_time = time.time()
     loss = 0.
-    for it in range(2):
+    for it in range(10):
         loss += trainer.train(args.iterations)
 
-    print("AVG LOSS: ", loss/2)
+    print("AVG LOSS: ", loss/10)
     print("--- %s seconds ---" % (time.time() - start_time))
     '''
 
 '''
     NOTE:
-    - it always stops at 9 iterations, why?;
     - flag --savefig sembra non funzionare;
-    - how we can use function draw_puzzle in puzzle.py???
-    - non capito perche le immagini del mit con tile_size 168 diventano 4x3 e non 3x3
-
+    - non sembra venire croppato;
+    - --tile_size 252 -> 2x2
+    - --tile_size 168 -> 3x4
+    - --tile_size 126 -> 4x5
 '''

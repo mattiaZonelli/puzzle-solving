@@ -14,8 +14,8 @@ class SiameseSetup:
         config = self.config
         trset, vlset = self.get_dsets()
 
-        self.trload = DataLoader(trset, config["batch_size"], num_workers=2)
-        self.vlload = DataLoader(vlset, 1, num_workers=2)
+        self.trload = DataLoader(trset, config["batch_size"], num_workers=1)
+        self.vlload = DataLoader(vlset, 1, num_workers=1)
         return self.trload, self.vlload
 
     def get_dsets(self):

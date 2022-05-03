@@ -1,7 +1,11 @@
-from tqdm import tqdm
+import random
+
 import torch
-from torch_sparse import coalesce, spmm
-from sps.projection_matrix import projection_matrix, lambdas
+from tqdm import tqdm
+import numpy as np
+from sps.projection_matrix import *
+from scipy.optimize import line_search
+E = 1e-3
 
 
 def compatibilities(Ch, Cv, puzzle_size):
@@ -37,51 +41,141 @@ def compatibilities(Ch, Cv, puzzle_size):
             inds += t_inds
             vals += t_vals
 
-    '''
-        qui vals is a list of 34 tensors, each tensor is of length ???, with cat, these 34 tensors are combined in one.
-        And we get only 1 tensor with len 4896, that are the non-zero values but there are some zeroes.
-    '''
     inds, vals = torch.cat(inds, dim=1), torch.cat(vals)
-    inds, vals = coalesce(inds, vals, nt ** 2, nt ** 2)
-    '''
-        to go from Ch e Cv to A = { inds, vals, ...} happens something i dont know...
-    '''
+    # inds, vals = coalesce(inds, vals, nt ** 2, nt ** 2)
 
-    #return torch.sparse_coo_tensor(inds, vals, (nt**2, nt**2)).coalesce()
-    return {"index": inds, "value": vals, "m": nt ** 2, "n": nt ** 2}
+    return torch.sparse_coo_tensor(inds, vals, (nt ** 2, nt ** 2)).coalesce()
+    # return {"index": inds, "value": vals, "m": nt ** 2, "n": nt ** 2}
 
 
-def psqp(A, N, lr=1e-3):
-    active = torch.full((N ** 2, 1), fill_value=True, device=A["value"].device)
-    p = torch.empty((N ** 2, 1), device=A["value"].device)
+def psqp(A: torch.tensor, N: int) -> torch.tensor:
+    active = torch.full((N ** 2, 1), fill_value=True, device=A.device)
+    p = torch.empty((N ** 2, 1), device=A.device)
+    pi = torch.full((N,), fill_value=0, device=A.device)
 
-    for Na in tqdm(range(1), total=N):
+    Np, Nk, bp, bk = constraints_matrix(N)
+    r = random.randrange(0, N*2)
+    Np, Nk, bp, bk = move_constraint(torch.tensor(r), Np, Nk, bp, bk)
+
+    Na = 0
+
+    while Na < N:
         p[active] = 1. / (N - Na)
-        d = spmm(**A, matrix=p)
-        #d = torch.sparse.mm(A, p)
 
-        K, Nk = projection_matrix(p, N)
-        # lambdas_x = lambdas(p, Nk, N)
-        s = torch.mm(K.t(), d)
+        d = torch.sparse.mm(A, p) * 2.  # gv not null
 
-        ''' # tau_m == step, sembra non venire calcolata esattamente bene
+        Pq = projection_matrix(p.shape[0], Np)
+        s = (Pq @ d)
+        # s, Np, Nk, bp, bk = adjust_dependency(s, Np, Nk, bp, bk, p.shape[0], d)
 
-         if torch.linalg.norm(step) == 0:
-            tau_m =  −(NkTNk)^−1 NkT d
+        if -1e-3 <= torch.linalg.norm(s) <= 1e-3:  # S == 0
+            # in rosen's paper is called r
+            lambdas = ((torch.inverse((Np.T @ Np)) @ Np.T) @ d)
+            if torch.max(lambdas) <= 1e-4:  # if ALL lambdas are <= 0
+                return pi.int()
+            else:  # some components of lambdas are positive
+                # drop Hq corresponding to rq = max{ri} > 0
+                q = torch.argmax(lambdas).unsqueeze(0)
+                Np, Nk, bp, bk = move_constraint(q, Np, Nk, bp, bk)  # drop q-th constraint_ from Np
 
-        else: 
-            z = s / torch.linalg.norm(s)
-            tau_i = torch.div(lambdas_x, (Nk * z.item()).t())
-            tau_m = torch.min(tau_i)  # should be a value/coeff
+        else:
+            # normalize s with norma max first, then whit norm
+            s /= torch.linalg.norm(s, float('inf'))
+            s /= torch.linalg.norm(s)
+            lambda_M, M = steplength(p, Nk, bk, s, active)
 
-        p[active] += tau_m * s.item()
-        '''
+            d_lM = (s.T @ torch.sparse.mm(A, (p + lambda_M * s)))  # z T g'_v+1 (Rosen)
+            if d_lM < 0.:  # d_lM < 0
+                # interpolation as in Rosen's
+                zTg = (s.T @ d)
+                rho = zTg / (zTg - d_lM)
+                p[active] = (rho * (p[active] + lambda_M * s[active])) + ((1 - rho) * p[active])
+            else:  # d_lM >= 0
+                if len(M) > 1:
+                    M = check_z(s, Nk)
+                if M.nelement() != 0:
+                    Nk, Np, bk, bp = move_constraint(M, Nk, Np, bk, bp)  # add the q-th constraint to Np
 
-        p[active] += lr * s.item()
-        # p[active] += lr * d[active]
-        p.clamp_(0., 1.)
-        active = (p != 0.) | (p != 1.)
+                p[active] += lambda_M * s[active]
 
-    return p.reshape(N, N)
+            p = p.reshape(N, N)
+            # p -= p.min(dim=1).values.unsqueeze(1)
+            # assert torch.allclose(torch.sum(p, dim=1), torch.ones(N))
+            # assert torch.allclose(torch.sum(p, dim=0), torch.ones(N))
+            active = active.reshape(N, N)
+
+            still_active = torch.nonzero(active)
+            for i in range(len(still_active)):
+                k, l = still_active[i]
+                if -E <= p[k][l] <= E:
+                    active[k][l] = False
+                if p[k][l] > 1. - E:
+                    # active[k][l] = False
+                    active[k] = torch.zeros((1, N), dtype=bool)
+                    active[torch.arange(N), l] = torch.zeros((N,), dtype=bool)
+                    pi[k] = l
+                    Na += 1
+                    p[k] /= p[k].sum()
+            for nonact in (active == 0).nonzero():
+                p[nonact[0]][nonact[1]] = 1. if p[nonact[0]][nonact[1]] > 1.-E else 0.
+            p = p.reshape(N ** 2, 1)
+            active = active.reshape(N ** 2, 1)
+    return pi.int()
 
 
+def psqp_ls(A: torch.tensor, N: int) -> torch.tensor:
+    active = torch.full((N ** 2, 1), fill_value=True, device=A.device)
+    p = torch.empty((N ** 2, 1), device=A.device)
+    pi = torch.full((N,), fill_value=-1, device=A.device)
+
+    Np, Nk, bp, bk = constraints_matrix(N)
+    r = random.randrange(0, N * 2)
+    Np, Nk, bp, bk = move_constraint(torch.tensor(r), Np, Nk, bp, bk)
+
+    Na = 0
+
+    while Na < N:
+        p[active] = 1. / (N - Na)
+
+        d = torch.mm(A, p) * 2.  # gv not null
+
+        Pq = projection_matrix(p.shape[0], Np)
+        s = (Pq @ d)
+        # s, Np, Nk, bp, bk = adjust_dependency(s, Np, Nk, bp, bk, p.shape[0], d)
+        # normalize s with norma max first, then whit norm
+        s /= torch.linalg.norm(s, float('inf'))
+        s /= torch.linalg.norm(s)
+
+        def obj_foo(x):
+            return (x.unsqueeze(0) @ torch.sparse.mm(A, x.unsqueeze(1))).squeeze()
+        def obj_grad(x):
+            return torch.sparse.mm(A, x.unsqueeze(1)).squeeze()
+
+        step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
+
+        while step[0] is not None and torch.max(p[active]) < 1+E:
+            p[active] += step[0] * s[active]
+            step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
+
+        p = p.reshape(N, N)
+
+        active = active.reshape(N, N)
+
+        if N - Na == 1:
+            pi[torch.where(pi < 0)[0]] = p[torch.where(pi < 0)[0]].argmax()
+            Na += 1
+        else:
+            still_active = torch.nonzero(active)
+            for i in range(len(still_active)):
+                k, l = still_active[i]
+                if p[k][l] <= E:
+                    active[k][l] = False
+                if p[k][l] > 1 - E:
+                    active[k][l] = False
+                    # pi[k] = l  # si spacca con puzzle quadrati, side dispari (3x3, 5x5,...)
+                    pi[k] = l if pi[k] == -1 else pi[k]
+                    Na += 1
+        p = p.reshape(N ** 2, 1)
+        active = active.reshape(N ** 2, 1)
+
+    return pi.int()

@@ -22,7 +22,7 @@ def draw_puzzle(tiles, puzzle_size, separate=False):
     c, ts, _ = tiles.shape[1:]
 
     # nh, nw, ts, ts, c
-    tiles = tiles.reshape(nh, nw, c, ts, ts).transpose(0, 1, 3, 4, 2)
+    tiles = tiles.reshape(nh, nw, c, ts, ts).permute(0, 1, 3, 4, 2)
     if separate:
         _, axes = plt.subplots(nh, nw)
         for i in range(nh):
@@ -30,7 +30,7 @@ def draw_puzzle(tiles, puzzle_size, separate=False):
                 axes[i, j].imshow(tiles[i, j, :, :, :])
                 axes[i, j].axis("off")
     else:
-        tiles = tiles.transpose(0, 2, 1, 3, 4).reshape(nh * ts, nw * ts, c)
+        tiles = tiles.permute(0, 2, 1, 3, 4).reshape(nh * ts, nw * ts, c)
         plt.imshow(tiles)
         plt.axis("off")
     plt.show()
@@ -120,9 +120,11 @@ class PuzzleSet(UnsupervisedImageFolder):
         tiles = tiles.reshape(nh * nw, c, size, size)
 
         order = list(range(tiles.shape[0]))
+        # draw_puzzle(tiles, (nh, nw), separate=True)
         if self.shuffle:
             random.shuffle(order)
             tiles = tiles[order]
+        # draw_puzzle(tiles, (nh, nw), separate=True)
         return tiles, torch.tensor(order), torch.tensor([nh, nw])
 
     def __getitem__(self, idx):
