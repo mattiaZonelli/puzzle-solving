@@ -48,6 +48,72 @@ def compatibilities(Ch, Cv, puzzle_size):
     # return {"index": inds, "value": vals, "m": nt ** 2, "n": nt ** 2}
 
 
+def psqp_ls(A: torch.tensor, N: int) -> torch.tensor:
+    active = torch.full((N ** 2, 1), fill_value=True, device=A.device)
+    p = torch.empty((N ** 2, 1), device=A.device)
+    pi = torch.full((N,), fill_value=-1, device=A.device)
+
+    Np, Nk, bp, bk = constraints_matrix(N)
+    r = random.randrange(0, N * 2)
+    Np, Nk, bp, bk = move_constraint(torch.tensor(r), Np, Nk, bp, bk)
+
+    Na = 0
+
+    while Na < N:
+        p[active] = 1. / (N - Na)
+
+        d = torch.mm(A, p) * 2.  # gv not null
+
+        Pq = projection_matrix(p.shape[0], Np)
+        s = (Pq @ d)
+        # s, Np, Nk, bp, bk = adjust_dependency(s, Np, Nk, bp, bk, p.shape[0], d)
+        # normalize s with norma max first, then whit norm
+        s /= torch.linalg.norm(s, float('inf'))
+        s /= torch.linalg.norm(s)
+
+        def obj_foo(x):
+            return (x.unsqueeze(0) @ torch.sparse.mm(A, x.unsqueeze(1))).squeeze()
+        def obj_grad(x):
+            return torch.sparse.mm(A, x.unsqueeze(1)).squeeze()
+
+        step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
+
+        while step[0] is not None and torch.max(p[active]) < 1+E:
+            p[active] += step[0] * s[active]
+            step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
+
+        p = p.reshape(N, N)
+
+        active = active.reshape(N, N)
+
+        if step[0] is None:
+            pi[pi < 0.] = 0.
+            return pi.int()
+
+        if N - Na == 1:
+            pi[torch.where(pi < 0)[0]] = p[torch.where(pi < 0)[0]].argmax()
+            Na += 1
+        else:
+            still_active = torch.nonzero(active)
+            for i in range(len(still_active)):
+                k, l = still_active[i]
+                if p[k][l] <= E:
+                    active[k][l] = False
+                if p[k][l] > 1 - E:
+                    active[k][l] = False
+                    # pi[k] = l  # si spacca con puzzle quadrati, side dispari (3x3, 5x5,...)
+                    if pi[k] == -1:
+                        pi[k] = l
+                        Na += 1
+        p = p.reshape(N ** 2, 1)
+        active = active.reshape(N ** 2, 1)
+
+    pi[pi < 0.] = 0.
+    return pi.int()
+
+
+'''
+steplength as Rosen
 def psqp(A: torch.tensor, N: int) -> torch.tensor:
     active = torch.full((N ** 2, 1), fill_value=True, device=A.device)
     p = torch.empty((N ** 2, 1), device=A.device)
@@ -120,62 +186,4 @@ def psqp(A: torch.tensor, N: int) -> torch.tensor:
                 p[nonact[0]][nonact[1]] = 1. if p[nonact[0]][nonact[1]] > 1.-E else 0.
             p = p.reshape(N ** 2, 1)
             active = active.reshape(N ** 2, 1)
-    return pi.int()
-
-
-def psqp_ls(A: torch.tensor, N: int) -> torch.tensor:
-    active = torch.full((N ** 2, 1), fill_value=True, device=A.device)
-    p = torch.empty((N ** 2, 1), device=A.device)
-    pi = torch.full((N,), fill_value=-1, device=A.device)
-
-    Np, Nk, bp, bk = constraints_matrix(N)
-    r = random.randrange(0, N * 2)
-    Np, Nk, bp, bk = move_constraint(torch.tensor(r), Np, Nk, bp, bk)
-
-    Na = 0
-
-    while Na < N:
-        p[active] = 1. / (N - Na)
-
-        d = torch.mm(A, p) * 2.  # gv not null
-
-        Pq = projection_matrix(p.shape[0], Np)
-        s = (Pq @ d)
-        # s, Np, Nk, bp, bk = adjust_dependency(s, Np, Nk, bp, bk, p.shape[0], d)
-        # normalize s with norma max first, then whit norm
-        s /= torch.linalg.norm(s, float('inf'))
-        s /= torch.linalg.norm(s)
-
-        def obj_foo(x):
-            return (x.unsqueeze(0) @ torch.sparse.mm(A, x.unsqueeze(1))).squeeze()
-        def obj_grad(x):
-            return torch.sparse.mm(A, x.unsqueeze(1)).squeeze()
-
-        step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
-
-        while step[0] is not None and torch.max(p[active]) < 1+E:
-            p[active] += step[0] * s[active]
-            step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
-
-        p = p.reshape(N, N)
-
-        active = active.reshape(N, N)
-
-        if N - Na == 1:
-            pi[torch.where(pi < 0)[0]] = p[torch.where(pi < 0)[0]].argmax()
-            Na += 1
-        else:
-            still_active = torch.nonzero(active)
-            for i in range(len(still_active)):
-                k, l = still_active[i]
-                if p[k][l] <= E:
-                    active[k][l] = False
-                if p[k][l] > 1 - E:
-                    active[k][l] = False
-                    # pi[k] = l  # si spacca con puzzle quadrati, side dispari (3x3, 5x5,...)
-                    pi[k] = l if pi[k] == -1 else pi[k]
-                    Na += 1
-        p = p.reshape(N ** 2, 1)
-        active = active.reshape(N ** 2, 1)
-
-    return pi.int()
+    return pi.int()'''

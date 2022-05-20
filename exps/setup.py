@@ -1,7 +1,6 @@
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.models import resnet50
-
 from data import factory
 from sps.siamese import SiameseNet
 
@@ -25,7 +24,7 @@ class SiameseSetup:
                         download=config.get("download", False))
         vlset = factory(config["dataset"], size=config["tile_size"],
                         puzzle=True, root=config["data_dir"],
-                        download=config.get("download", False), shuffle=True)
+                        download=config.get("download", False), shuffle=False)  # TODO: era shuffle:True
         self.num_tiles = len(vlset[0]["puzzle"])
         return trset, vlset
 
@@ -37,5 +36,6 @@ class SiameseSetup:
         config = self.config
         self.optimizer = optim.SGD(self.model.parameters(), lr=config["lr"],
                                    weight_decay=config["weight_decay"],
-                                   momentum=config["momentum"])
-        return self.optimizer
+                                   momentum=config["momentum"])  # select which parameter to train
+        # self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=3, gamma=0.1)  # todo non so a che serve
+        return self.optimizer  #, self.scheduler
