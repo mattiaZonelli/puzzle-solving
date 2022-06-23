@@ -19,7 +19,7 @@ def input_parser():
     parser.add_argument(
         "--similarity",
         type=str,
-        default="gaussian",  # todo "gaussian"
+        default="gaussian",
         help="The similarity function."
     )
     parser.add_argument(
@@ -89,7 +89,7 @@ def train_abs_parser():
     parser.add_argument(
         "--eval_step",
         type=int,
-        default=10,
+        default=1000,
         help="The number of iterations after which the evaluation is run."
     )
     parser.add_argument(

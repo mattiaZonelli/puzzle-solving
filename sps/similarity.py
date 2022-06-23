@@ -23,10 +23,11 @@ def sim(x1, x2, name):
     C = (1. - torch.eye(*W.shape, device=x1.device)) * (W > 0.)
     W = W * C
 
-    vals, inds = W.topk(3, dim=1)
+    k = 4
+    vals, inds = W.topk(k, dim=1)
     W = torch.zeros_like(W)
-    W[torch.arange(W.shape[0], device=W.device).repeat_interleave(3),
-      inds[:, :3].flatten()] = vals[:, :3].flatten()
+    W[torch.arange(W.shape[0], device=W.device).repeat_interleave(k),
+      inds[:, :k].flatten()] = vals[:, :k].flatten()
     return W
 
 
@@ -84,3 +85,11 @@ def psqp_Cv(t):
     W = torch.ones([W.shape[0], W.shape[1]]) - W
     W[W == 1.] = 0.
     return W
+
+
+def myaccuracy(pred, target):
+    acc = 0.
+    for i in range(target.shape[0]):
+        if target[i][target[i].argmax().item()] == pred[i][target[i].argmax().item()]:
+            acc += 1/target.shape[0]
+    return acc

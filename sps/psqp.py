@@ -5,6 +5,7 @@ from tqdm import tqdm
 import numpy as np
 from sps.projection_matrix import *
 from scipy.optimize import line_search
+
 E = 1e-3
 
 
@@ -73,12 +74,13 @@ def psqp_ls(A: torch.tensor, N: int) -> torch.tensor:
 
         def obj_foo(x):
             return (x.unsqueeze(0) @ torch.sparse.mm(A, x.unsqueeze(1))).squeeze()
+
         def obj_grad(x):
             return torch.sparse.mm(A, x.unsqueeze(1)).squeeze()
 
         step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
 
-        while step[0] is not None and torch.max(p[active]) < 1+E:
+        while step[0] is not None and torch.max(p[active]) < 1 + E:
             p[active] += step[0] * s[active]
             step = line_search(obj_foo, obj_grad, p.squeeze(), -s.squeeze())
 
@@ -186,4 +188,63 @@ def psqp(A: torch.tensor, N: int) -> torch.tensor:
                 p[nonact[0]][nonact[1]] = 1. if p[nonact[0]][nonact[1]] > 1.-E else 0.
             p = p.reshape(N ** 2, 1)
             active = active.reshape(N ** 2, 1)
-    return pi.int()'''
+    return pi.int()
+'''
+
+'''     
+function compare relaxation and psqp(...)        
+        h = 2
+        r = 2
+        lim_h = 9
+        lim_r = 9
+        psqp_dacc = torch.zeros(lim_r - r + lim_h - h)
+        rl_dacc = torch.zeros(lim_r - r + lim_h - h)
+        n_tiles = torch.zeros(lim_r - r + lim_h - h)
+        i = 1
+        while h < lim_h and r < lim_r:
+            order = list(range(h * r))
+            random.shuffle(order)
+            order = torch.tensor([order]).int()
+            # relab = solve_puzzle((h, r), order).int()
+            for k in range(20):
+                relab = solve_puzzle((h, r), order).int()
+                try:
+                    t_dacc = self.accuracy(relab.squeeze(), order.squeeze()).item()
+                except:
+                    t_dacc = my_accuracy(relab.squeeze(), order.squeeze(), h * r)
+                if t_dacc > rl_dacc[i]:
+                    rl_dacc[i] = t_dacc
+
+            data['puzzle_size'] = torch.tensor([h, r]).unsqueeze(0)
+            Ch, Cv = oracle_compatibilities(h, r, order)
+            A = compatibilities(Ch, Cv, data["puzzle_size"].squeeze())
+            p = psqp_ls(A, N=(h * r))
+            try:
+                psqp_dacc[i] = self.accuracy(p.squeeze(), order.squeeze()).item()
+            except:
+                psqp_dacc[i] = my_accuracy(p.squeeze(), order.squeeze(), h * r)
+            if psqp_dacc[i] < 1e-3:
+                for k in range(15):
+                    p = psqp_ls(A, N=(h * r))
+                    dacc = my_accuracy(p.squeeze(), order.squeeze(), h * r)
+                    if dacc > psqp_dacc[i]:
+                        psqp_dacc[i] = dacc
+
+            n_tiles[i] = h * r
+            if h == r:
+                r += 1
+            else:
+                h += 1
+            i += 1
+
+        fileName = r'n_tile vs accuracy.png'
+        fig, ax = plt.subplots(1)
+        plt.plot(n_tiles, rl_dacc, label='ReLab Accuracy')
+        plt.plot(n_tiles, psqp_dacc, label='PSQP Accuracy')
+        plt.legend()
+        plt.xlabel('# tiles')
+        plt.ylabel('Accuracy')
+        plt.show()
+        fig.savefig(fileName, format='png')
+        plt.close(fig)
+'''
