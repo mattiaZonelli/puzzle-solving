@@ -1,8 +1,4 @@
 import random
-
-import torch
-from tqdm import tqdm
-import numpy as np
 from sps.projection_matrix import *
 from scipy.optimize import line_search
 
@@ -89,8 +85,10 @@ def psqp_ls(A: torch.tensor, N: int) -> torch.tensor:
         active = active.reshape(N, N)
 
         if step[0] is None:
-            pi[pi < 0.] = 0.
-            return pi.int()
+            # pi[pi < 0.] = 0.
+            # TODO: scegliere tra dim=0 e =1 in base a chi restituisce la Global comp più alta (non so se abbia senso)
+            pi = p.argmax(dim=1)
+            return p.reshape(N ** 2, 1), pi
 
         if N - Na == 1:
             pi[torch.where(pi < 0)[0]] = p[torch.where(pi < 0)[0]].argmax()
@@ -111,7 +109,7 @@ def psqp_ls(A: torch.tensor, N: int) -> torch.tensor:
         active = active.reshape(N ** 2, 1)
 
     pi[pi < 0.] = 0.
-    return pi.int()
+    return pi, p
 
 
 '''

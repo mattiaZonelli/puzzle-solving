@@ -31,12 +31,13 @@ def initBoard2(dims):
 
 
 # core of the relaxation labeling
-def relaxation_labelling(p, dims, order):
+def relaxation_labelling(p, dims, comp_matrix):
     h, w = dims
     SIDE = h * w
-    Ch, Cv = oracle_compatibilities(h, w, order)
+    #Ch, Cv = oracle_compatibilities(h, w, order)
 
-    rij = compatibilities(Ch, Cv, torch.tensor([h, w]))  # todo rinominare
+    # rij = compatibilities(Ch, Cv, torch.tensor([h, w]))
+    rij = comp_matrix
     prev = 0
     diff = 1
     step = 0
@@ -72,8 +73,8 @@ def relaxation_labelling(p, dims, order):
 
 
 # look at the probability vector and assign to the cell the label with the highest value in the vector
-def solve_puzzle(dims, order):
-    p = relaxation_labelling(initBoard2(dims), dims, order)
+def solve_puzzle(dims, comp_matrix):
+    p = relaxation_labelling(initBoard2(dims), dims, comp_matrix)
     SIDE = dims[0] * dims[1]
     puzzle = torch.empty(SIDE, 1)
     for i in range(SIDE):
