@@ -1,6 +1,6 @@
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torchvision.models import resnet50
+from torchvision.models import resnet50, ResNet50_Weights
 from data import factory
 from sps.siamese import SiameseNet
 
@@ -29,13 +29,15 @@ class SiameseSetup:
         return trset, vlset
 
     def get_model(self):
-        self.model = SiameseNet(resnet50(pretrained=True))
+        self.model = SiameseNet(resnet50(weights=ResNet50_Weights.DEFAULT))
         return self.model
 
     def get_optimizer(self):
         config = self.config
+
+        print("CONFIG: ", config)
+
         self.optimizer = optim.SGD(self.model.parameters(), lr=config["lr"],
                                    weight_decay=config["weight_decay"],
                                    momentum=config["momentum"])  # select which parameter to train
-        # self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=3, gamma=0.1)  # todo non so a che serve
-        return self.optimizer  #, self.scheduler
+        return self.optimizer

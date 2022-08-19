@@ -223,7 +223,7 @@ def validation(model, config, device):
 
 VERBOSE = False
 ITERATIONS = 450
-OG_MODEL = "ray_rot00.pt"
+OG_MODEL = "ray_rot_mcgill00.pt"
 
 if __name__ == "__main__":
 
@@ -234,7 +234,7 @@ if __name__ == "__main__":
     model_config = {"dataset": args.dataset,
                     "download": args.download,
                     "data_dir": osp.abspath("./data/datasets"),
-                    "batch_size": tune.choice([8, 16, 32]),
+                    "batch_size": tune.choice([16, 32, 64]),
                     "lr": tune.loguniform(1e-5, 1e-1),
                     "weight_decay": tune.loguniform(1e-10, 1e-3),
                     "momentum": tune.choice([0.8, 0.85, 0.9, 0.95]),
@@ -259,10 +259,10 @@ if __name__ == "__main__":
         local_dir="./ray_results",
         resources_per_trial={"cpu": 1, "gpu": 0.5},
         config=model_config,
-        num_samples=10,  # number of trials for the hyperparameter optimization
+        num_samples=5,  # number of trials for the hyperparameter optimization
         scheduler=scheduler,
         progress_reporter=reporter,
-        stop={"training_iteration": 1},
+        stop={"training_iteration": 2},
     )
 
     best_trial = result.get_best_trial("loss", "min", "last")

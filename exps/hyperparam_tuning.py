@@ -184,7 +184,7 @@ def train_parser():
 
 
 VERBOSE = False
-ITERATIONS = 4
+ITERATIONS = 450
 
 if __name__ == "__main__":
     args = train_parser().parse_args()
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     model_config = {"dataset": args.dataset,
                     "download": args.download,
                     "data_dir": osp.abspath("./data/datasets"),
-                    "batch_size": tune.choice([4, 8, 16]),
+                    "batch_size": tune.choice([8, 16, 32, 64]),
                     "lr": tune.loguniform(1e-5, 1e-1),
                     "weight_decay": tune.loguniform(1e-10, 1e-3),
                     "momentum": tune.choice([0.8, 0.85, 0.9, 0.95]),
