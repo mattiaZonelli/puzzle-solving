@@ -30,9 +30,12 @@ def sim(x1, x2, name):
       inds[:, :k].flatten()] = vals[:, :k].flatten()
     return W
 
-def myaccuracy(pred, target):
+
+def myaccuracy(pred, target, c_tiles):
     acc = 0.
     for i in range(target.shape[0]):
         if target[i][target[i].argmax().item()] == pred[i][target[i].argmax().item()]:
             acc += 1 / target.shape[0]
+        # elif pred[i].argmax() in c_tiles:
+        #     acc += 1 / target.shape[0]
     return acc

@@ -80,5 +80,5 @@ def solve_puzzle(dims, comp_matrix):
     for i in range(SIDE):
         pos = torch.argmax(p.reshape(SIDE, SIDE)[i])
         puzzle[i] = pos
-    return puzzle.T
+    return puzzle.T.squeeze().int(), p
 

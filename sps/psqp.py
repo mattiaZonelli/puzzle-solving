@@ -88,7 +88,7 @@ def psqp_ls(A: torch.tensor, N: int) -> torch.tensor:
             # pi[pi < 0.] = 0.
             # TODO: scegliere tra dim=0 e =1 in base a chi restituisce la Global comp più alta (non so se abbia senso)
             pi = p.argmax(dim=1)
-            return p.reshape(N ** 2, 1), pi
+            return pi, p.reshape(N ** 2, 1)
 
         if N - Na == 1:
             pi[torch.where(pi < 0)[0]] = p[torch.where(pi < 0)[0]].argmax()
@@ -209,7 +209,7 @@ function compare relaxation and psqp(...)
                 try:
                     t_dacc = self.accuracy(relab.squeeze(), order.squeeze()).item()
                 except:
-                    t_dacc = my_accuracy(relab.squeeze(), order.squeeze(), h * r)
+                    t_dacc = puzzle_accuracy(relab.squeeze(), order.squeeze(), h * r)
                 if t_dacc > rl_dacc[i]:
                     rl_dacc[i] = t_dacc
 
@@ -220,11 +220,11 @@ function compare relaxation and psqp(...)
             try:
                 psqp_dacc[i] = self.accuracy(p.squeeze(), order.squeeze()).item()
             except:
-                psqp_dacc[i] = my_accuracy(p.squeeze(), order.squeeze(), h * r)
+                psqp_dacc[i] = puzzle_accuracy(p.squeeze(), order.squeeze(), h * r)
             if psqp_dacc[i] < 1e-3:
                 for k in range(15):
                     p = psqp_ls(A, N=(h * r))
-                    dacc = my_accuracy(p.squeeze(), order.squeeze(), h * r)
+                    dacc = puzzle_accuracy(p.squeeze(), order.squeeze(), h * r)
                     if dacc > psqp_dacc[i]:
                         psqp_dacc[i] = dacc
 

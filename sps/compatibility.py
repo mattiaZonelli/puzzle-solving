@@ -101,7 +101,8 @@ def mgc(x):
     W = torch.zeros((n_tiles, n_tiles))
     C_LR.fill_diagonal_(0.)
     for i in range(n_tiles):
-        W[i] = C_LR[i] / C_LR[:, i].topk(k=2, largest=False).values[1]
+        # W[i] = C_LR[i] / C_LR[:, i].topk(k=2, largest=False).values[1]
+        W[i] = C_LR[i] / D_LR[:, i].topk(k=2, largest=False).values[1]  # seems way better
 
     W = torch.ones((n_tiles, n_tiles)).fill_diagonal_(0.) - W
 

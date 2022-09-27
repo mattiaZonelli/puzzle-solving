@@ -29,7 +29,7 @@ class SiameseSetup:
         return trset, vlset
 
     def get_model(self):
-        self.model = SiameseNet(resnet50(weights=ResNet50_Weights.DEFAULT))
+        self.model = SiameseNet(resnet50(weights=ResNet50_Weights.IMAGENET1K_V2))
         return self.model
 
     def get_optimizer(self):
