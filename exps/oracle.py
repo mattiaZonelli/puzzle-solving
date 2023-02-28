@@ -34,11 +34,12 @@ def oracle_compatibilities(h, w, order):
     return Ch, Cv
 
 
-def puzzle_accuracy(target, actual, n, c_tiles):
+# def puzzle_accuracy(target, actual, n, c_tiles):
+def puzzle_accuracy(target, actual, n):
     acc = 0.
     for i in range(n):
         if target[i] == actual[i]:
             acc += 1/n
-        elif target[i] in c_tiles:
-            acc += 1 / n
+        # elif target[i] in c_tiles:
+        #     acc += 1 / n
     return acc

@@ -1,6 +1,8 @@
 from argparse import ArgumentParser
 import os
 import os.path as osp
+from functools import partial
+
 import torch
 import torch.nn as nn
 
@@ -9,7 +11,7 @@ from ray import tune
 from ray.tune import Trainable, CLIReporter
 from ray.tune.trial import ExportFormat
 
-from exps.train import Trainer
+from exps.train_tune import Trainer
 from exps.utils import set_seed
 from exps.utils.parsers import train_abs_parser
 
@@ -36,9 +38,9 @@ class SiameseTrainable(Trainable):
         checkpoint_path = os.path.join(tmp_checkpoint_dir, "checkpoint.pt")
         self.model.to("cpu")
         if isinstance(self.model, nn.DataParallel):
-            self.model.module.load_state_dict(torch.load(checkpoint_path))
+            self.model.module.load_state_dict(torch.load(checkpoint_path, map_location='cuda:0'))
         else:
-            self.model.load_state_dict(torch.load(checkpoint_path))
+            self.model.load_state_dict(torch.load(checkpoint_path, map_location='cuda:0'))
         self.model.to(self.trn.device)
 
     def _export_model(self, export_formats, export_dir):
@@ -60,9 +62,11 @@ class SiameseTrainable(Trainable):
         return True
 
     def step(self):
-        train_loss = self.trn.epoch()
-        val_loss = self.trn.evaluate()
-        result = {"train_loss": train_loss, "val_loss": val_loss}
+        train_loss = self.trn.ray_train(iterations=10)
+        val_loss, val_steps, total, correct = self.trn.validation(vlload=None)
+        mean_val_loss = val_loss / val_steps
+        result = {"train_loss": train_loss, "val_loss": mean_val_loss}
+
 
         if self.best_val_loss > val_loss:
             self.best_val_loss = val_loss
@@ -102,19 +106,21 @@ def hpo_parser():
     parser.add_argument(
         "--cpus_per_trial",  # best 3
         type=int,
-        default=1,
+        default=3,
         help="The number of used cpus per trial."
     )
     parser.add_argument(
         "--gpus_per_trial",  # best 0.5
         type=float,
-        default=0,
+        default=0.5,
         help="The percentage of used gpus per trial."
     )
     return parser
 
 
 if __name__ == "__main__":
+
+    torch.cuda.empty_cache()
     args = hpo_parser().parse_args()
     set_seed(args.seed)
 
@@ -122,18 +128,21 @@ if __name__ == "__main__":
     local_dir = osp.abspath(args.hpo_dir)
     check_dir = osp.abspath(osp.join(".", "ray_checkpoints"))
 
-    config = {"dataset": "pascalvoc",
-              "data_dir": osp.abspath("./datasets"),
-              "batch_size": args.batch_size,
+    config = {"dataset": "mit",
+              #"data_dir": "/Users/mattia/Documents/GitHub/siamese_puzzle_solving/data/datasets",
+              "data_dir": "/home/mzonelli/tmp/data/datasets",
+              "tile_size": args.tile_size,
+              "batch_size": tune.choice([8, 16, 32]),
               "lr": tune.loguniform(1e-6, 1e-2) if args.lr is None else args.lr,
               "weight_decay": tune.loguniform(1e-15, 1e-5) if args.weight_decay is None else args.weight_decay,
               "momentum": tune.choice([0.9, 0.95, 0.99]) if args.momentum is None else args.momentum,
               "verbose": args.verbose,
+              "similarity": args.similarity,
               "device": args.device,
               "device_ids": args.device_ids
               }
 
-    ray.init(num_gpus=torch.cuda.device_count())
+    #ray.init(num_gpus=torch.cuda.device_count())
 
     def trial_name_id(trial):
         return str(trial.trial_id)
@@ -151,14 +160,14 @@ if __name__ == "__main__":
     analysis = tune.run(
         SiameseTrainable,
         name=exp_name,
-        metric="min-val_loss",
+        metric="val_loss",
         mode="min",
-        stop={"training_iteration": args.epochs},
+        stop={"training_iteration": 1},
         reuse_actors=True,
         resources_per_trial={"cpu": args.cpus_per_trial,
                              "gpu": args.gpus_per_trial},
         config=config,
-        num_samples=args.num_samples,
+        num_samples=10,  # args.num_samples,
         local_dir=local_dir,
         progress_reporter=reporter,
         export_formats=ExportFormat.MODEL,
@@ -166,5 +175,5 @@ if __name__ == "__main__":
         trial_name_creator=trial_name_id,
         trial_dirname_creator=trial_dirname_id,
         keep_checkpoints_num=1,
-        checkpoint_score_attr="min-val_loss",
+        checkpoint_score_attr="val_loss",
     )
